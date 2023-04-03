@@ -26,8 +26,11 @@ struct Configs(HashMap<RawInputContainer, ButtonAction>);
 #[derive(Resource)]
 struct ActionSet(HashSet<ButtonAction>);
 
-fn setup_window(mut window: Query<&mut Window>) {
-    window.single_mut().cursor.visible = false;
+fn setup_window(mut window_query: Query<&mut Window>) {
+    let mut window = window_query.single_mut();
+    
+    window.cursor.visible = false;
+    window.title = String::from("Boomer Shooter");
 }
 
 fn spawn_target(
