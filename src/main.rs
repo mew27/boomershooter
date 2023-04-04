@@ -10,12 +10,18 @@ use bevy::{
         keyboard::KeyboardInput,
         mouse::{self, MouseMotion},
     },
-    prelude::*,
+    prelude::*, render::{primitives::Aabb, view::RenderLayers}, sprite::MaterialMesh2dBundle, core_pipeline::clear_color::ClearColorConfig,
 };
 use configs::{ButtonAction, RawInputContainer};
 
 #[derive(Component)]
 struct Hitbox;
+
+#[derive(Component)]
+struct ThreeDCamera;
+
+#[derive(Component)]
+struct TwoDCamera;
 
 #[derive(Component)]
 struct GroundReference;
@@ -37,6 +43,7 @@ fn spawn_target(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut color_materials : ResMut<Assets<ColorMaterial>>
 ) {
     let square_pos = Transform::from_xyz(0., 5., 5.);
 
@@ -72,11 +79,49 @@ fn spawn_target(
 
     let camera_initial_pos = Transform::from_xyz(21., 5., 6.).with_rotation(Quat::from_xyzw(0., 0.7, 0., 0.7));
     
-    // camera
-    commands.spawn(Camera3dBundle {
-        transform: camera_initial_pos.clone(),
+    // 3D camera
+    commands.spawn((Camera3dBundle {
+            transform: camera_initial_pos.clone(),
+            ..default()
+        },
+        ThreeDCamera
+    ));
+
+    //2d overlay camera
+    commands.spawn((
+        Camera2dBundle {
+            camera_2d : Camera2d {
+                clear_color : ClearColorConfig::None
+            },
+            camera : Camera {
+                order : 1,
+                ..default()
+            },
+            ..default()
+        },
+        RenderLayers::from_layers(&[1]),
+        TwoDCamera
+    ));
+
+    //Spawn vertical crossair
+    commands.spawn((
+    MaterialMesh2dBundle {
+        mesh : meshes.add(shape::Box::from_corners(Vec3 { x : -2., y : -20., z : 0.}, Vec3 { x: 2., y: 20., z: 0. }).into()).into(),
+        material : color_materials.add(ColorMaterial::from(Color::WHITE)),
         ..default()
-    });
+    },
+    RenderLayers::layer(1)
+    ));
+
+    //Spawn horizontal crossair
+    commands.spawn((
+    MaterialMesh2dBundle {
+        mesh : meshes.add(shape::Box::from_corners(Vec3 { x : -20., y : -2., z : 0.}, Vec3 { x: 20., y: 2., z: 0. }).into()).into(),
+        material : color_materials.add(ColorMaterial::from(Color::WHITE)),
+        ..default()
+    },
+    RenderLayers::layer(1)
+    ));
 
     // ground reference
     commands.spawn((camera_initial_pos.clone(), GroundReference));
@@ -84,7 +129,7 @@ fn spawn_target(
 
 fn handle_movement(
     mut action_set: ResMut<ActionSet>,
-    mut camera_query: Query<&mut Transform, With<Camera>>,
+    mut camera_query: Query<&mut Transform, With<ThreeDCamera>>,
 ) {
     let mut camera_transform = camera_query.single_mut();
 
@@ -152,36 +197,10 @@ fn handle_raw_input(
             }
         }
     }
-
-    //let camera_transform = camera_query.single();
-
-    //const HITSCAN_SIZE: f32 = 50.;
-
-    // if mouse_query.pressed(MouseButton::Left) {
-    //     commands.spawn(PbrBundle {
-    //         mesh: meshes.add(
-    //             shape::Cylinder {
-    //                 radius: 0.05,
-    //                 height: HITSCAN_SIZE,
-    //                 ..default()
-    //             }
-    //             .into(),
-    //         ),
-    //         material: materials.add(Color::rgb(0.3, 0.5, 0.3).into()),
-    //         transform: Transform {
-    //             translation: camera_transform.translation
-    //                 + (camera_transform.forward() * HITSCAN_SIZE / 2.),
-    //             ..default()
-    //         }
-    //         .looking_to(camera_transform.down(), camera_transform.forward()),
-    //         //visibility: Visibility::Hidden,
-    //         ..default()
-    //     });
-    // }
 }
 
 fn handle_camera_mov(
-    mut camera_query: Query<&mut Transform, With<Camera>>,
+    mut camera_query: Query<&mut Transform, With<ThreeDCamera>>,
     mut mouse_mov: EventReader<MouseMotion>,
 ) {
     let mut camera_transform = camera_query.single_mut();
@@ -192,6 +211,92 @@ fn handle_camera_mov(
     }
 }
 
+fn handle_fire(
+    hitbox_query : Query<(Entity, &Transform), With<Hitbox>>,
+    camera_query : Query<&Transform, With<ThreeDCamera>>,
+    mut action_set   : ResMut<ActionSet>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut commands: Commands,
+) {
+    let look_direction = camera_query.single().forward();
+    let camera_origin  = camera_query.single().translation;
+
+    let hitray = Ray {origin : camera_origin, direction : look_direction};
+    
+    let mut closest_hit : Option<f32> = Option::None;
+
+    match action_set.0.take(&ButtonAction::Fire) {
+        Some(_) => {
+            //Hitbox checking
+            
+            for (entity, hitbox) in hitbox_query.iter() {
+                let hitbox_size = Vec3 {x: 2.5, y: 2.5, z: 2.5};
+                let hitbox_pos  = hitbox.translation;
+                
+                println!("{:?}", hitbox_size);
+
+                let mut bounding_planes = Vec::from((hitbox_pos - hitbox_size).to_array());
+                bounding_planes.extend((hitbox_pos + hitbox_size).to_array());
+
+                //println!("min xyz - max xyz{:?}", bounding_planes);
+                
+                if let Some(intersect_dist) = hitray.intersect_plane(Vec3 { x: bounding_planes[0], y: hitbox_pos.y, z: hitbox_pos.z }, Vec3 {x: 1., y: 0., z: 0.}) {
+                    let intersect_point = hitray.get_point(intersect_dist);
+
+                    if (
+                        (bounding_planes[1] < intersect_point.y) && (intersect_point.y < bounding_planes[4]) &&
+                        (bounding_planes[2] < intersect_point.z) && (intersect_point.z < bounding_planes[5])
+                        )
+                    {
+                        //Hit found on a particular plane
+                        let dist = intersect_point.distance(camera_origin);
+                        
+
+                        println!("HIT!!!!!!");
+                        if let Some(min_val) = closest_hit {
+                            if dist < min_val {
+                                //HIT!!!
+                                closest_hit = Some(dist);
+                            }
+                        } else {
+                            closest_hit = Some(dist);
+                        }
+                    }
+                }
+            }
+        },
+        _ => ()
+    }
+    //const HITSCAN_SIZE: f32 = 50.;
+
+    //commands.spawn(PbrBundle {
+        //mesh: meshes.add(
+             //shape::Cylinder {
+                 //radius: 0.05,
+                 //height: HITSCAN_SIZE,
+                 //..default()
+             //}
+             //.into(),
+         //),
+        //material: materials.add(Color::rgb(0.3, 0.5, 0.3).into()),
+        //transform: Transform {
+             //translation: camera_origin
+                 //+ (look_direction * HITSCAN_SIZE / 2.),
+             //..default()
+        //}
+        //.looking_to(camera_query.single().down(), camera_query.single().forward()),
+         ////visibility: Visibility::Hidden,
+        //..default()
+    //});    
+}
+
+fn should_check_collision (
+    action_set : Res<ActionSet>
+) -> bool {
+    return action_set.0.contains(&ButtonAction::Fire);
+}
+
 fn main() {
     let configs = configs::load_input_map();
 
@@ -200,6 +305,6 @@ fn main() {
         .insert_resource(Configs(configs))
         .insert_resource(ActionSet(HashSet::new()))
         .add_startup_systems((setup_window, spawn_target))
-        .add_systems((handle_raw_input, handle_movement, handle_camera_mov).chain())
+        .add_systems((handle_raw_input, handle_movement, handle_camera_mov, handle_fire.run_if(should_check_collision)).chain())
         .run();
 }
