@@ -7,11 +7,14 @@ use std::{
 };
 
 use bevy::{
+    core_pipeline::clear_color::ClearColorConfig,
     input::{
         keyboard::KeyboardInput,
         mouse::{self, MouseMotion},
     },
-    prelude::*, render::{primitives::Aabb, view::RenderLayers}, sprite::MaterialMesh2dBundle, core_pipeline::clear_color::ClearColorConfig,
+    prelude::*,
+    render::{primitives::Aabb, view::RenderLayers},
+    sprite::MaterialMesh2dBundle,
 };
 use configs::{ButtonAction, RawInputContainer};
 
@@ -37,7 +40,7 @@ struct ActionSet(HashSet<ButtonAction>);
 
 fn setup_window(mut window_query: Query<&mut Window>) {
     let mut window = window_query.single_mut();
-    
+
     window.cursor.visible = false;
     window.title = String::from("Boomer Shooter");
 }
@@ -46,16 +49,31 @@ fn spawn_target(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mut color_materials : ResMut<Assets<ColorMaterial>>
+    mut color_materials: ResMut<Assets<ColorMaterial>>,
 ) {
     let square_pos = Transform::from_xyz(0., 5., 5.);
 
-    // square
+    // square 1
     commands.spawn((
         PbrBundle {
             mesh: meshes.add(shape::Cube { size: 5. }.into()),
             material: materials.add(Color::rgb(0.3, 0.5, 0.3).into()),
             transform: square_pos,
+            ..default()
+        },
+        Hitbox,
+    ));
+
+    // square 2
+    commands.spawn((
+        PbrBundle {
+            mesh: meshes.add(shape::Cube { size: 5. }.into()),
+            material: materials.add(Color::rgb(0.3, 0.5, 0.3).into()),
+            transform: square_pos.with_translation(Vec3 {
+                x: -10.,
+                y: 5.,
+                z: 5.,
+            }),
             ..default()
         },
         Hitbox,
@@ -80,50 +98,84 @@ fn spawn_target(
         ..default()
     });
 
-    let camera_initial_pos = Transform::from_xyz(21., 5., 6.).with_rotation(Quat::from_xyzw(0., 0.7, 0., 0.7));
-    
+    let camera_initial_pos =
+        Transform::from_xyz(21., 5., 6.).with_rotation(Quat::from_xyzw(0., 0.7, 0., 0.7));
+
     // 3D camera
-    commands.spawn((Camera3dBundle {
+    commands.spawn((
+        Camera3dBundle {
             transform: camera_initial_pos.clone(),
             ..default()
         },
-        ThreeDCamera
+        ThreeDCamera,
     ));
 
     //2d overlay camera
     commands.spawn((
         Camera2dBundle {
-            camera_2d : Camera2d {
-                clear_color : ClearColorConfig::None
+            camera_2d: Camera2d {
+                clear_color: ClearColorConfig::None,
             },
-            camera : Camera {
-                order : 1,
+            camera: Camera {
+                order: 1,
                 ..default()
             },
             ..default()
         },
         RenderLayers::from_layers(&[1]),
-        TwoDCamera
+        TwoDCamera,
     ));
 
     //Spawn vertical crossair
     commands.spawn((
-    MaterialMesh2dBundle {
-        mesh : meshes.add(shape::Box::from_corners(Vec3 { x : -2., y : -20., z : 0.}, Vec3 { x: 2., y: 20., z: 0. }).into()).into(),
-        material : color_materials.add(ColorMaterial::from(Color::WHITE)),
-        ..default()
-    },
-    RenderLayers::layer(1)
+        MaterialMesh2dBundle {
+            mesh: meshes
+                .add(
+                    shape::Box::from_corners(
+                        Vec3 {
+                            x: -2.,
+                            y: -20.,
+                            z: 0.,
+                        },
+                        Vec3 {
+                            x: 2.,
+                            y: 20.,
+                            z: 0.,
+                        },
+                    )
+                    .into(),
+                )
+                .into(),
+            material: color_materials.add(ColorMaterial::from(Color::WHITE)),
+            ..default()
+        },
+        RenderLayers::layer(1),
     ));
 
     //Spawn horizontal crossair
     commands.spawn((
-    MaterialMesh2dBundle {
-        mesh : meshes.add(shape::Box::from_corners(Vec3 { x : -20., y : -2., z : 0.}, Vec3 { x: 20., y: 2., z: 0. }).into()).into(),
-        material : color_materials.add(ColorMaterial::from(Color::WHITE)),
-        ..default()
-    },
-    RenderLayers::layer(1)
+        MaterialMesh2dBundle {
+            mesh: meshes
+                .add(
+                    shape::Box::from_corners(
+                        Vec3 {
+                            x: -20.,
+                            y: -2.,
+                            z: 0.,
+                        },
+                        Vec3 {
+                            x: 20.,
+                            y: 2.,
+                            z: 0.,
+                        },
+                    )
+                    .into(),
+                )
+                .into(),
+            material: color_materials.add(ColorMaterial::from(Color::WHITE)),
+            ..default()
+        },
+        RenderLayers::layer(1),
     ));
 
     // ground reference
@@ -215,59 +267,66 @@ fn handle_camera_mov(
 }
 
 fn handle_fire(
-    hitbox_query : Query<(Entity, &Transform), With<Hitbox>>,
-    camera_query : Query<&Transform, With<ThreeDCamera>>,
-    mut action_set   : ResMut<ActionSet>,
+    hitbox_query: Query<(Entity, &Transform), With<Hitbox>>,
+    camera_query: Query<&Transform, With<ThreeDCamera>>,
+    mut action_set: ResMut<ActionSet>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut commands: Commands,
 ) {
     let look_direction = camera_query.single().forward();
-    let camera_origin  = camera_query.single().translation;
+    let camera_origin = camera_query.single().translation;
 
-    let hitray = Ray {origin : camera_origin, direction : look_direction};
+    let hitray = Ray {
+        origin: camera_origin,
+        direction: look_direction,
+    };
+    let mut hits = Vec::<(f32, Entity)>::new();
 
     match action_set.0.take(&ButtonAction::Fire) {
         Some(_) => {
             //Hitbox checking
-            
-            for (entity, hitbox) in hitbox_query.iter() {
-                if check_collision(&hitbox, &hitray) {
-                    //println!("Enter point = {:?}", hitray.get_point(tmin));
-                    println!("COLLISION!");
 
-                    commands.entity(entity).despawn();
+            for (entity, hitbox) in hitbox_query.iter() {
+                if let Some((entry_dist, _)) = check_collision(&hitbox, &hitray) {
+                    //println!("Enter point = {:?}", hitray.get_point(tmin));
+                    hits.push((entry_dist, entity));
+                    println!("COLLISION!");
                 }
             }
-        },
-        _ => ()
+
+            hits.sort_by(|(a, _), (b, _)| a.partial_cmp(b).unwrap());
+
+            if let Some((_, entity)) = hits.get(0) {
+                commands.entity(*entity).despawn();
+            }
+        }
+        _ => (),
     }
     //const HITSCAN_SIZE: f32 = 50.;
 
     //commands.spawn(PbrBundle {
-        //mesh: meshes.add(
-             //shape::Cylinder {
-                 //radius: 0.05,
-                 //height: HITSCAN_SIZE,
-                 //..default()
-             //}
-             //.into(),
-         //),
-        //material: materials.add(Color::rgb(0.3, 0.5, 0.3).into()),
-        //transform: Transform {
-             //translation: camera_origin
-                 //+ (look_direction * HITSCAN_SIZE / 2.),
-             //..default()
-        //}
-        //.looking_to(camera_query.single().down(), camera_query.single().forward()),
-         ////visibility: Visibility::Hidden,
-        //..default()
-    //});    
+    //mesh: meshes.add(
+    //shape::Cylinder {
+    //radius: 0.05,
+    //height: HITSCAN_SIZE,
+    //..default()
+    //}
+    //.into(),
+    //),
+    //material: materials.add(Color::rgb(0.3, 0.5, 0.3).into()),
+    //transform: Transform {
+    //translation: camera_origin
+    //+ (look_direction * HITSCAN_SIZE / 2.),
+    //..default()
+    //}
+    //.looking_to(camera_query.single().down(), camera_query.single().forward()),
+    ////visibility: Visibility::Hidden,
+    //..default()
+    //});
 }
 
-fn should_check_collision (
-    action_set : Res<ActionSet>
-) -> bool {
+fn should_check_collision(action_set: Res<ActionSet>) -> bool {
     return action_set.0.contains(&ButtonAction::Fire);
 }
 
@@ -279,6 +338,14 @@ fn main() {
         .insert_resource(Configs(configs))
         .insert_resource(ActionSet(HashSet::new()))
         .add_startup_systems((setup_window, spawn_target))
-        .add_systems((handle_raw_input, handle_movement, handle_camera_mov, handle_fire.run_if(should_check_collision)).chain())
+        .add_systems(
+            (
+                handle_raw_input,
+                handle_movement,
+                handle_camera_mov,
+                handle_fire.run_if(should_check_collision),
+            )
+                .chain(),
+        )
         .run();
 }

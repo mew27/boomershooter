@@ -66,8 +66,6 @@ fn get_default_input_map() -> HashMap<RawInputContainer, ButtonAction> {
 }
 
 pub fn load_input_map() -> HashMap<RawInputContainer, ButtonAction> {
-    let path = Path::new("configs.json");
-
     match read_to_string("configs.json") {
         Ok(string) => serde_json::from_str(&string).unwrap(),
         Err(_) => get_default_input_map(),
