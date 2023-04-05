@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-//check collision with slab method
+//check ray collision with slab method
 pub fn check_collision(hitbox : &Transform, hitray : &Ray) -> bool {
     let hitbox_size   = Vec3 {x: 2.5, y: 2.5, z: 2.5};
     let hitbox_pos    = hitbox.translation;
