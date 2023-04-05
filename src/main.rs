@@ -24,6 +24,9 @@ use crate::physics::check_collision;
 struct Hitbox;
 
 #[derive(Component)]
+struct Health(f32);
+
+#[derive(Component)]
 struct ThreeDCamera;
 
 #[derive(Component)]
@@ -62,6 +65,7 @@ fn spawn_target(
             ..default()
         },
         Hitbox,
+        Health(50.)
     ));
 
     // square 2
@@ -77,6 +81,7 @@ fn spawn_target(
             ..default()
         },
         Hitbox,
+        Health(50.)
     ));
 
     //plane
@@ -267,7 +272,7 @@ fn handle_camera_mov(
 }
 
 fn handle_fire(
-    hitbox_query: Query<(Entity, &Transform), With<Hitbox>>,
+    mut hitbox_query: Query<(Entity, &Transform, &mut Health), With<Hitbox>>,
     camera_query: Query<&Transform, With<ThreeDCamera>>,
     mut action_set: ResMut<ActionSet>,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -281,24 +286,27 @@ fn handle_fire(
         origin: camera_origin,
         direction: look_direction,
     };
-    let mut hits = Vec::<(f32, Entity)>::new();
+    let mut hits = Vec::<(f32, Mut<Health>, Entity)>::new();
 
     match action_set.0.take(&ButtonAction::Fire) {
         Some(_) => {
             //Hitbox checking
 
-            for (entity, hitbox) in hitbox_query.iter() {
+            for (entity, hitbox, health) in &mut hitbox_query {
                 if let Some((entry_dist, _)) = check_collision(&hitbox, &hitray) {
                     //println!("Enter point = {:?}", hitray.get_point(tmin));
-                    hits.push((entry_dist, entity));
-                    println!("COLLISION!");
+                    hits.push((entry_dist, health, entity));
+                    //println!("COLLISION!");
                 }
             }
 
-            hits.sort_by(|(a, _), (b, _)| a.partial_cmp(b).unwrap());
+            hits.sort_by(|(a, _, _), (b, _, _)| a.partial_cmp(b).unwrap());
 
-            if let Some((_, entity)) = hits.get(0) {
-                commands.entity(*entity).despawn();
+            if let Some((_, health, entity)) = hits.get_mut(0) {
+                health.0 -= 1.;
+                if health.0 <= 0. {
+                    commands.entity(*entity).despawn();
+                }
             }
         }
         _ => (),
