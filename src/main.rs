@@ -223,46 +223,51 @@ fn handle_fire(
     let camera_origin  = camera_query.single().translation;
 
     let hitray = Ray {origin : camera_origin, direction : look_direction};
-    
-    let mut closest_hit : Option<f32> = Option::None;
 
     match action_set.0.take(&ButtonAction::Fire) {
         Some(_) => {
             //Hitbox checking
             
             for (entity, hitbox) in hitbox_query.iter() {
-                let hitbox_size = Vec3 {x: 2.5, y: 2.5, z: 2.5};
-                let hitbox_pos  = hitbox.translation;
+                let hitbox_size   = Vec3 {x: 2.5, y: 2.5, z: 2.5};
+                let hitbox_pos    = hitbox.translation;
+                let hitbox_minmax = (hitbox_pos - hitbox_size, hitbox_pos + hitbox_size);
                 
-                println!("{:?}", hitbox_size);
+                println!("hitbox_minmax = {:?}", hitbox_minmax);
+                println!("hitbox_pos    = {:?}", hitbox_pos);
+                println!("hitray        = {:?}", (hitray));
 
-                let mut bounding_planes = Vec::from((hitbox_pos - hitbox_size).to_array());
-                bounding_planes.extend((hitbox_pos + hitbox_size).to_array());
+                let (mut tmin, mut tmax) = (- f32::INFINITY, f32::INFINITY);
 
-                //println!("min xyz - max xyz{:?}", bounding_planes);
-                
-                if let Some(intersect_dist) = hitray.intersect_plane(Vec3 { x: bounding_planes[0], y: hitbox_pos.y, z: hitbox_pos.z }, Vec3 {x: 1., y: 0., z: 0.}) {
-                    let intersect_point = hitray.get_point(intersect_dist);
+                // x slab collision
+                if hitray.direction.x != 0. {
+                    let tx1 = (hitbox_minmax.0.x - hitray.origin.x) / hitray.direction.x;
+                    let tx2 = (hitbox_minmax.1.x - hitray.origin.x) / hitray.direction.x;
 
-                    if (
-                        (bounding_planes[1] < intersect_point.y) && (intersect_point.y < bounding_planes[4]) &&
-                        (bounding_planes[2] < intersect_point.z) && (intersect_point.z < bounding_planes[5])
-                        )
-                    {
-                        //Hit found on a particular plane
-                        let dist = intersect_point.distance(camera_origin);
-                        
+                    tmin = tmin.max(tx1.min(tx2));
+                    tmax = tmax.min(tx1.max(tx2));
+                }
 
-                        println!("HIT!!!!!!");
-                        if let Some(min_val) = closest_hit {
-                            if dist < min_val {
-                                //HIT!!!
-                                closest_hit = Some(dist);
-                            }
-                        } else {
-                            closest_hit = Some(dist);
-                        }
-                    }
+                //y slab collision
+                if hitray.direction.y != 0. {
+                    let ty1 = (hitbox_minmax.0.y - hitray.origin.y) / hitray.direction.y;
+                    let ty2 = (hitbox_minmax.1.y - hitray.origin.y) / hitray.direction.y;
+
+                    tmin = tmin.max(ty1.min(ty2)); 
+                    tmax = tmax.min(ty1.max(ty2));
+                }
+
+                //z slab collision
+                if hitray.direction.z != 0. {
+                    let tz1 = (hitbox_minmax.0.z - hitray.origin.z) / hitray.direction.z;
+                    let tz2 = (hitbox_minmax.1.z - hitray.origin.z) / hitray.direction.z;
+
+                    tmin = tmin.max(tz1.min(tz2));
+                    tmax = tmax.min(tz1.max(tz2));
+                }
+
+                if tmax >= tmin {
+                    println!("Enter point = {:?}", hitray.get_point(tmin));
                 }
             }
         },
