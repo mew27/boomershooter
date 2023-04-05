@@ -235,6 +235,8 @@ fn handle_fire(
                 if check_collision(&hitbox, &hitray) {
                     //println!("Enter point = {:?}", hitray.get_point(tmin));
                     println!("COLLISION!");
+
+                    commands.entity(entity).despawn();
                 }
             }
         },
