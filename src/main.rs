@@ -1,5 +1,6 @@
 mod configs;
 mod physics;
+mod health;
 
 use std::{
     collections::{HashMap, HashSet},
@@ -17,14 +18,8 @@ use bevy::{
     sprite::MaterialMesh2dBundle,
 };
 use configs::{ButtonAction, RawInputContainer};
-
-use crate::physics::check_collision;
-
-#[derive(Component)]
-struct Hitbox;
-
-#[derive(Component)]
-struct Health(f32);
+use physics::{AA_Hitbox, Hitray, check_collision};
+use health::Health;
 
 #[derive(Component)]
 struct ThreeDCamera;
@@ -55,6 +50,11 @@ fn spawn_target(
     mut color_materials: ResMut<Assets<ColorMaterial>>,
 ) {
     let square_pos = Transform::from_xyz(0., 5., 5.);
+    let square_size = Vec3 {
+        x: 5.,
+        y: 5.,
+        z: 5.,
+    };
 
     // square 1
     commands.spawn((
@@ -64,8 +64,11 @@ fn spawn_target(
             transform: square_pos,
             ..default()
         },
-        Hitbox,
-        Health(50.)
+        AA_Hitbox {
+            origin: square_pos.translation - square_size / 2.,
+            extent: square_size,
+        },
+        Health(50.),
     ));
 
     // square 2
@@ -80,8 +83,11 @@ fn spawn_target(
             }),
             ..default()
         },
-        Hitbox,
-        Health(50.)
+        AA_Hitbox {
+            origin: square_pos.translation - square_size / 2.,
+            extent: square_size,
+        },
+        Health(50.),
     ));
 
     //plane
@@ -234,10 +240,6 @@ fn handle_raw_input(
     mut action_set: ResMut<ActionSet>,
     keys_query: Res<Input<KeyCode>>,
     mouse_query: Res<Input<MouseButton>>,
-    //camera_query: Query<&Transform, With<Camera>>,
-    //mut meshes: ResMut<Assets<Mesh>>,
-    //mut materials: ResMut<Assets<StandardMaterial>>,
-    //mut commands: Commands,
 ) {
     for input_container in configs.0.keys() {
         match input_container {
@@ -272,70 +274,57 @@ fn handle_camera_mov(
 }
 
 fn handle_fire(
-    mut hitbox_query: Query<(Entity, &Transform, &mut Health), With<Hitbox>>,
     camera_query: Query<&Transform, With<ThreeDCamera>>,
     mut action_set: ResMut<ActionSet>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    //mut meshes: ResMut<Assets<Mesh>>,
+    //mut materials: ResMut<Assets<StandardMaterial>>,
     mut commands: Commands,
 ) {
     let look_direction = camera_query.single().forward();
     let camera_origin = camera_query.single().translation;
 
-    let hitray = Ray {
-        origin: camera_origin,
-        direction: look_direction,
-    };
-    let mut hits = Vec::<(f32, Mut<Health>, Entity)>::new();
-
     match action_set.0.take(&ButtonAction::Fire) {
         Some(_) => {
-            //Hitbox checking
-
-            for (entity, hitbox, health) in &mut hitbox_query {
-                if let Some((entry_dist, _)) = check_collision(&hitbox, &hitray) {
-                    //println!("Enter point = {:?}", hitray.get_point(tmin));
-                    hits.push((entry_dist, health, entity));
-                    //println!("COLLISION!");
-                }
-            }
-
-            hits.sort_by(|(a, _, _), (b, _, _)| a.partial_cmp(b).unwrap());
-
-            if let Some((_, health, entity)) = hits.get_mut(0) {
-                health.0 -= 1.;
-                if health.0 <= 0. {
-                    commands.entity(*entity).despawn();
-                }
-            }
+            commands.spawn(Hitray(Ray {
+                origin: camera_origin,
+                direction: look_direction,
+            }));
         }
         _ => (),
     }
-    //const HITSCAN_SIZE: f32 = 50.;
-
-    //commands.spawn(PbrBundle {
-    //mesh: meshes.add(
-    //shape::Cylinder {
-    //radius: 0.05,
-    //height: HITSCAN_SIZE,
-    //..default()
-    //}
-    //.into(),
-    //),
-    //material: materials.add(Color::rgb(0.3, 0.5, 0.3).into()),
-    //transform: Transform {
-    //translation: camera_origin
-    //+ (look_direction * HITSCAN_SIZE / 2.),
-    //..default()
-    //}
-    //.looking_to(camera_query.single().down(), camera_query.single().forward()),
-    ////visibility: Visibility::Hidden,
-    //..default()
-    //});
 }
 
-fn should_check_collision(action_set: Res<ActionSet>) -> bool {
+fn should_handle_fire(action_set: Res<ActionSet>) -> bool {
     return action_set.0.contains(&ButtonAction::Fire);
+}
+
+fn hitline_system(
+    mut hitrays: Query<(Entity, &Hitray)>,
+    mut hitbox_query: Query<(Entity, &AA_Hitbox, &mut Health)>,
+    mut commands: Commands,
+) {
+    for (hitray_entity, hitray) in &hitrays {
+        let mut hits = Vec::<(f32, Mut<Health>, Entity)>::new();
+
+        for (entity, hitbox, health) in &mut hitbox_query {
+            if let Some((entry_dist, _)) = check_collision(&hitbox, &hitray) {
+                //println!("Enter point = {:?}", hitray.get_point(tmin));
+                hits.push((entry_dist, health, entity));
+                //println!("COLLISION!");
+            }
+        }
+
+        hits.sort_by(|(a, _, _), (b, _, _)| a.partial_cmp(b).unwrap());
+
+        if let Some((_, health, entity)) = hits.get_mut(0) {
+            commands.entity(hitray_entity).despawn();
+
+            health.0 -= 1.;
+            if health.0 <= 0. {
+                commands.entity(*entity).despawn();
+            }
+        }
+    }
 }
 
 fn main() {
@@ -351,7 +340,8 @@ fn main() {
                 handle_raw_input,
                 handle_movement,
                 handle_camera_mov,
-                handle_fire.run_if(should_check_collision),
+                handle_fire.run_if(should_handle_fire),
+                hitline_system
             )
                 .chain(),
         )
