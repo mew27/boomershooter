@@ -15,7 +15,7 @@ use bevy::{
     },
     prelude::*,
     render::{primitives::Aabb, view::RenderLayers},
-    sprite::MaterialMesh2dBundle,
+    sprite::MaterialMesh2dBundle, window::CursorGrabMode,
 };
 use configs::{ButtonAction, RawInputContainer};
 use physics::{AA_Hitbox, Hitray, check_collision};
@@ -40,6 +40,7 @@ fn setup_window(mut window_query: Query<&mut Window>) {
     let mut window = window_query.single_mut();
 
     window.cursor.visible = false;
+    window.cursor.grab_mode = CursorGrabMode::Locked;
     window.title = String::from("Boomer Shooter");
 }
 
